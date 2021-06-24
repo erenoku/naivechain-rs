@@ -8,7 +8,19 @@ use std::net::{TcpListener, TcpStream};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use std::{thread, thread::JoinHandle};
 
-#[derive(Debug, Clone, PartialEq)]
+#[macro_use]
+extern crate lazy_static;
+
+// lazy_static! (
+// )
+
+lazy_static! {
+    static ref BLOCK_CHAIN: BlockChain = BlockChain {
+        blocks: vec![BlockChain::get_genesis()],
+    };
+}
+
+#[derive(Serialize, Debug, Clone, PartialEq)]
 struct Block {
     index: u32,
     previous_hash: String,
@@ -167,15 +179,28 @@ fn send_response(stream: &mut TcpStream, msg: Message) {
     let size = j.len() as u32;
 
     stream.write_u32::<BigEndian>(size).unwrap();
-    stream.write(&j).unwrap();
+    stream.write_all(&j).unwrap();
 }
 
 fn handle_getting(mut stream: TcpStream) {
     let msg = get_response(&mut stream);
 
     match msg.m_type {
-        MessageType::QueryAll => {}
-        MessageType::QueryLatest => {}
+        MessageType::QueryAll => {
+            println!("query all")
+        }
+        MessageType::QueryLatest => {
+            let msg = Message {
+                m_type: MessageType::ResponseBlockchain,
+                content: serde_json::to_string(&BLOCK_CHAIN.get_latest()).unwrap(),
+            };
+            let json = serde_json::to_string(&msg).unwrap();
+            let msg = json.as_bytes();
+            let size = msg.len() as u32;
+
+            stream.write_u32::<BigEndian>(size).unwrap();
+            stream.write_all(&msg).unwrap();
+        }
         MessageType::ResponseBlockchain => {}
     }
 }
@@ -207,19 +232,21 @@ fn main() {
     let config = Config::from_env();
     println!("{:?}", config);
 
-    let blockchain = Box::new(vec![BlockChain::get_genesis()]);
-
-    config.initial_peers.split(",").map(|peer| {
+    for peer in config.initial_peers.split(",") {
+        if peer == "" {
+            break;
+        }
         send_to_peer(
             peer.to_owned(),
             Message {
                 m_type: MessageType::QueryLatest,
                 content: String::new(),
             },
-        )
-    });
+        );
+    }
 
-    init_p2p_server(config.p2p_port);
+    let p2p_handler = init_p2p_server(config.p2p_port);
+    p2p_handler.join().unwrap();
 }
 
 #[cfg(test)]
