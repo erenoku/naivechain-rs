@@ -1,23 +1,20 @@
+use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use serde::{Deserialize, Serialize};
+use serde_json::{Result, Value};
 use sha2::{Digest, Sha256};
 use std::env;
-use std::net::TcpStream;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::io::{Read, Write};
+use std::net::{TcpListener, TcpStream};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use std::{thread, thread::JoinHandle};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 struct Block {
     index: u32,
     previous_hash: String,
     timestamp: u64,
     data: String,
     hash: String,
-}
-
-enum MessageType {
-    QueryLatest,
-    QueryAll,
-    ResponseBlockchain,
 }
 
 impl Block {
@@ -77,6 +74,37 @@ impl BlockChain {
     fn get_latest(&self) -> Block {
         self.blocks.last().unwrap().clone()
     }
+
+    fn get_genesis() -> Block {
+        Block {
+            index: 0,
+            previous_hash: String::from("0"),
+            timestamp: 1465154705,
+            data: String::from("my genesis block!!"),
+            hash: String::from("816534932c2b7154836da6afc367695e6337db8a921823784c14378abed4f7d7"),
+        }
+    }
+
+    fn is_valid(&self) -> bool {
+        if *self.blocks.first().unwrap() != BlockChain::get_genesis() {
+            return false;
+        }
+
+        let mut temp_blocks = vec![self.blocks.first().unwrap()];
+
+        for i in 1..self.blocks.len() {
+            if Block::is_valid_next_block(
+                temp_blocks.get(i - 1).unwrap(),
+                self.blocks.get(i).unwrap(),
+            ) {
+                temp_blocks.push(self.blocks.get(i).unwrap());
+            } else {
+                return false;
+            }
+        }
+
+        true
+    }
 }
 
 fn calculate_hash(index: &u32, previous_hash: &str, timestamp: &u64, data: &str) -> String {
@@ -88,16 +116,6 @@ fn calculate_hash(index: &u32, previous_hash: &str, timestamp: &u64, data: &str)
     hasher.update(data);
 
     format!("{:x}", hasher.finalize())
-}
-
-fn get_genesis_block() -> Block {
-    Block {
-        index: 0,
-        previous_hash: String::from("0"),
-        timestamp: 1465154705,
-        data: String::from("my genesis block!!"),
-        hash: String::from("816534932c2b7154836da6afc367695e6337db8a921823784c14378abed4f7d7"),
-    }
 }
 
 #[derive(Deserialize, Debug, Serialize)]
@@ -117,29 +135,91 @@ impl Config {
     }
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+enum MessageType {
+    QueryLatest,
+    QueryAll,
+    ResponseBlockchain,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct Message {
+    m_type: MessageType,
+    content: String,
+}
+
 // connect to peers in different threads and return vector of their handlers
-fn connect_to_peers(initial_peers: &'static [String]) -> Vec<JoinHandle<()>> {
-    let mut handlers: Vec<JoinHandle<()>> = vec![];
+fn send_to_peer(peer: String, msg: Message) {
+    thread::spawn(move || match TcpStream::connect(&peer) {
+        Ok(mut stream) => {
+            send_response(&mut stream, msg);
+            let rcp = get_response(&mut stream);
 
-    for peer in initial_peers {
-        let handler = thread::spawn(move || match TcpStream::connect(peer) {
-            Ok(mut stream) => {
-                println!("Succesfully connected to {}", peer)
-            }
-            Err(e) => eprint!("Error Connecting to {}. {}", peer, e),
-        });
+            println!("{:?}", rcp);
+        }
+        Err(e) => eprint!("Error Connecting to {}. {}", &peer, e),
+    });
+}
 
-        handlers.push(handler);
+fn send_response(stream: &mut TcpStream, msg: Message) {
+    let json = serde_json::to_string(&msg).unwrap();
+    let j = json.as_bytes();
+    let size = j.len() as u32;
+
+    stream.write_u32::<BigEndian>(size).unwrap();
+    stream.write(&j).unwrap();
+}
+
+fn handle_getting(mut stream: TcpStream) {
+    let msg = get_response(&mut stream);
+
+    match msg.m_type {
+        MessageType::QueryAll => {}
+        MessageType::QueryLatest => {}
+        MessageType::ResponseBlockchain => {}
     }
+}
 
-    handlers
+fn get_response(stream: &mut TcpStream) -> Message {
+    let size = stream.read_u32::<BigEndian>().unwrap(); // read the size sended from client
+
+    let mut buffer = vec![0_u8; size as usize]; // create a buffer with that size
+    stream.read_exact(&mut buffer).unwrap(); // read to buffer
+
+    let string_buffer = String::from_utf8(buffer).unwrap(); // convert to string
+    serde_json::from_str(&string_buffer).unwrap()
+}
+
+// init the p2p server return the thread handler
+fn init_p2p_server(port: String) -> JoinHandle<()> {
+    thread::spawn(move || {
+        let listener = TcpListener::bind(format!("0.0.0.0:{}", port)).unwrap();
+
+        // accept connections and process them, spawning a new thread for each one
+        println!("Server listening on port {}", port);
+        for stream in listener.incoming() {
+            thread::spawn(move || handle_getting(stream.unwrap())); // TODO: unwrap
+        }
+    })
 }
 
 fn main() {
     let config = Config::from_env();
     println!("{:?}", config);
 
-    let blockchain = Box::new(vec![get_genesis_block()]);
+    let blockchain = Box::new(vec![BlockChain::get_genesis()]);
+
+    config.initial_peers.split(",").map(|peer| {
+        send_to_peer(
+            peer.to_owned(),
+            Message {
+                m_type: MessageType::QueryLatest,
+                content: String::new(),
+            },
+        )
+    });
+
+    init_p2p_server(config.p2p_port);
 }
 
 #[cfg(test)]
