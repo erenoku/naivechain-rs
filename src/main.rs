@@ -5,22 +5,21 @@ use sha2::{Digest, Sha256};
 use std::env;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
+use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use std::{thread, thread::JoinHandle};
 
 #[macro_use]
 extern crate lazy_static;
 
-// lazy_static! (
-// )
-
 lazy_static! {
-    static ref BLOCK_CHAIN: BlockChain = BlockChain {
+    static ref BLOCK_CHAIN: Mutex<BlockChain> = Mutex::new(BlockChain {
         blocks: vec![BlockChain::get_genesis()],
-    };
+    });
+    static ref PEERS: Mutex<Vec<String>> = Mutex::new(vec![]);
 }
 
-#[derive(Serialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 struct Block {
     index: u32,
     previous_hash: String,
@@ -81,6 +80,10 @@ impl BlockChain {
         if Block::is_valid_next_block(&new, &self.get_latest()) {
             self.blocks.push(new)
         }
+    }
+
+    pub fn replace(&mut self, new_blocks: Vec<Block>) {
+        self.blocks = new_blocks;
     }
 
     fn get_latest(&self) -> Block {
@@ -147,34 +150,45 @@ impl Config {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 enum MessageType {
     QueryLatest,
     QueryAll,
     ResponseBlockchain,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 struct Message {
     m_type: MessageType,
     content: String,
 }
 
-// connect to peers in different threads and return vector of their handlers
-fn send_to_peer(peer: String, msg: Message) {
+/// send snt to peer in different thread and return vector of its handler
+/// use if gets response
+fn send_to_peer(peer: String, msg: Message) -> JoinHandle<()> {
     thread::spawn(move || match TcpStream::connect(&peer) {
         Ok(mut stream) => {
             send_response(&mut stream, msg);
-            let rcp = get_response(&mut stream);
+            let rsp = get_response(&mut stream);
 
-            println!("{:?}", rcp);
+            println!("{:?}", rsp);
+
+            match rsp.m_type {
+                MessageType::ResponseBlockchain => {
+                    handle_blockchain_response(rsp);
+                }
+                _ => {}
+            }
         }
         Err(e) => eprint!("Error Connecting to {}. {}", &peer, e),
-    });
+    })
 }
 
 fn send_response(stream: &mut TcpStream, msg: Message) {
     let json = serde_json::to_string(&msg).unwrap();
+
+    println!("{:?}", json);
+
     let j = json.as_bytes();
     let size = j.len() as u32;
 
@@ -185,23 +199,76 @@ fn send_response(stream: &mut TcpStream, msg: Message) {
 fn handle_getting(mut stream: TcpStream) {
     let msg = get_response(&mut stream);
 
+    println!("{:?}", msg);
+
     match msg.m_type {
         MessageType::QueryAll => {
-            println!("query all")
-        }
-        MessageType::QueryLatest => {
             let msg = Message {
                 m_type: MessageType::ResponseBlockchain,
-                content: serde_json::to_string(&BLOCK_CHAIN.get_latest()).unwrap(),
+                content: serde_json::to_string(&BLOCK_CHAIN.lock().unwrap().blocks).unwrap(),
             };
-            let json = serde_json::to_string(&msg).unwrap();
-            let msg = json.as_bytes();
-            let size = msg.len() as u32;
-
-            stream.write_u32::<BigEndian>(size).unwrap();
-            stream.write_all(&msg).unwrap();
+            send_response(&mut stream, msg);
         }
-        MessageType::ResponseBlockchain => {}
+        MessageType::QueryLatest => {
+            println!("latest");
+
+            let msg = Message {
+                m_type: MessageType::ResponseBlockchain,
+                content: serde_json::to_string(&vec![BLOCK_CHAIN.lock().unwrap().get_latest()])
+                    .unwrap(),
+            };
+            send_response(&mut stream, msg);
+        }
+
+        MessageType::ResponseBlockchain => {
+            handle_blockchain_response(msg);
+        }
+    }
+}
+
+fn broadcast(msg: Message) {
+    for peer in PEERS.lock().unwrap().iter() {
+        send_to_peer(peer.clone(), msg.clone());
+    }
+}
+
+fn handle_blockchain_response(res: Message) {
+    let mut received_blocks: Vec<Block> = serde_json::from_str(&res.content).unwrap();
+    received_blocks.sort_by(|a, b| a.index.cmp(&b.index));
+    let latest_block_received = received_blocks.last().unwrap();
+    let latest_block_held = BLOCK_CHAIN.lock().unwrap().get_latest();
+
+    if latest_block_received.index > latest_block_held.index {
+        println!(
+            "blockchain possibly behind. We got: {}, Peer got: {}",
+            latest_block_held.index, latest_block_received.index
+        );
+
+        if latest_block_held.hash == latest_block_received.previous_hash {
+            println!("We can append the received block to our chain");
+            BLOCK_CHAIN
+                .lock()
+                .unwrap()
+                .blocks
+                .push(latest_block_received.to_owned());
+            // TODO: Broadcast
+            broadcast(Message {
+                m_type: MessageType::ResponseBlockchain,
+                content: serde_json::to_string(&BLOCK_CHAIN.lock().unwrap().get_latest()).unwrap(),
+            });
+        } else if received_blocks.len() == 1 {
+            println!("We have to query the chain from our peer");
+            // TODO: Broadcast
+            broadcast(Message {
+                m_type: MessageType::QueryAll,
+                content: String::new(),
+            });
+        } else {
+            println!("Received blockchain is longer than current blockchain");
+            BLOCK_CHAIN.lock().unwrap().replace(received_blocks);
+        }
+    } else {
+        println!("received blockchain is not longer than current blockchain. Do nothing")
     }
 }
 
@@ -233,6 +300,8 @@ fn main() {
     println!("{:?}", config);
 
     for peer in config.initial_peers.split(",") {
+        PEERS.lock().unwrap().push(peer.to_owned());
+
         if peer == "" {
             break;
         }
@@ -240,6 +309,7 @@ fn main() {
             peer.to_owned(),
             Message {
                 m_type: MessageType::QueryLatest,
+                // m_type: MessageType::QueryAll,
                 content: String::new(),
             },
         );
