@@ -1,12 +1,12 @@
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use serde::{Deserialize, Serialize};
-use serde_json::{Result, Value};
+
 use sha2::{Digest, Sha256};
 use std::env;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::Mutex;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 use std::{thread, thread::JoinHandle};
 
 #[macro_use]
@@ -173,11 +173,8 @@ fn send_to_peer(peer: String, msg: Message) -> JoinHandle<()> {
 
             println!("{:?}", rsp);
 
-            match rsp.m_type {
-                MessageType::ResponseBlockchain => {
-                    handle_blockchain_response(rsp);
-                }
-                _ => {}
+            if let MessageType::ResponseBlockchain = rsp.m_type {
+                handle_blockchain_response(rsp);
             }
         }
         Err(e) => eprint!("Error Connecting to {}. {}", &peer, e),
@@ -193,7 +190,7 @@ fn send_response(stream: &mut TcpStream, msg: Message) {
     let size = j.len() as u32;
 
     stream.write_u32::<BigEndian>(size).unwrap();
-    stream.write_all(&j).unwrap();
+    stream.write_all(j).unwrap();
 }
 
 fn handle_getting(mut stream: TcpStream) {
@@ -299,10 +296,10 @@ fn main() {
     let config = Config::from_env();
     println!("{:?}", config);
 
-    for peer in config.initial_peers.split(",") {
+    for peer in config.initial_peers.split(',') {
         PEERS.lock().unwrap().push(peer.to_owned());
 
-        if peer == "" {
+        if peer.is_empty() {
             break;
         }
         send_to_peer(
