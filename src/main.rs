@@ -35,8 +35,8 @@ struct Config {
 impl Config {
     pub fn from_env() -> Self {
         Config {
-            http_port: env::var("HTTP_PORT").unwrap_or("8000".into()),
-            p2p_port: env::var("P2P_PORT").unwrap_or("5000".into()),
+            http_port: env::var("HTTP_PORT").unwrap_or_else(|_| "8000".into()),
+            p2p_port: env::var("P2P_PORT").unwrap_or_else(|_| "5000".into()),
             initial_peers: env::var("INITIAL").unwrap_or_default(),
         }
     }
@@ -100,7 +100,6 @@ fn main() {
 
         Message {
             m_type: MessageType::QueryLatest,
-            // m_type: MessageType::QueryAll,
             content: String::new(),
         }
         .send_to_peer(peer.to_owned());
@@ -119,6 +118,27 @@ async fn blocks() -> actix_web::Result<HttpResponse> {
     Ok(HttpResponse::build(StatusCode::OK)
         .content_type("application/json")
         .body(serde_json::to_string(&BLOCK_CHAIN.lock().unwrap().blocks).unwrap()))
+}
+
+#[get("/peers")]
+async fn peers() -> actix_web::Result<HttpResponse> {
+    Ok(HttpResponse::build(StatusCode::OK).body(PEERS.lock().unwrap().join("\n")))
+}
+
+async fn connect_to_peer(peer: String) -> actix_web::Result<HttpResponse> {
+    if peer.is_empty() {
+        return Ok(HttpResponse::build(StatusCode::BAD_REQUEST).body(""));
+    }
+
+    Message {
+        m_type: MessageType::QueryLatest,
+        content: String::new(),
+    }
+    .send_to_peer(peer.to_owned());
+
+    PEERS.lock().unwrap().push(peer);
+
+    Ok(HttpResponse::build(StatusCode::OK).body(""))
 }
 
 async fn mine_block(body: String) -> actix_web::Result<HttpResponse> {
@@ -140,11 +160,19 @@ async fn mine_block(body: String) -> actix_web::Result<HttpResponse> {
 #[actix_web::main]
 async fn init_http_server(http_port: String) -> std::io::Result<()> {
     HttpServer::new(|| {
-        App::new().service(blocks).service(
-            web::resource("/mineBlock")
-                .route(web::post().to(mine_block))
-                .data(String::configure(|cfg| cfg.limit(4096))),
-        )
+        App::new()
+            .service(blocks)
+            .service(
+                web::resource("/addPeer")
+                    .route(web::post().to(connect_to_peer))
+                    .data(String::configure(|cfg| cfg.limit(4096))),
+            )
+            .service(
+                web::resource("/mineBlock")
+                    .route(web::post().to(mine_block))
+                    .data(String::configure(|cfg| cfg.limit(4096))),
+            )
+            .service(peers)
     })
     .bind(format!("127.0.0.1:{}", http_port))?
     .run()
