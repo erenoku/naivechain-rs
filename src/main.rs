@@ -1,6 +1,8 @@
 #[macro_use]
 extern crate lazy_static;
 
+use actix_web::http::StatusCode;
+use actix_web::{get, web, App, FromRequest, HttpRequest, HttpResponse, HttpServer, Responder};
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::net::{TcpListener, TcpStream};
@@ -23,7 +25,7 @@ lazy_static! {
     static ref PEERS: Mutex<Vec<String>> = Mutex::new(vec![]);
 }
 
-#[derive(Deserialize, Debug, Serialize)]
+#[derive(Deserialize, Debug, Serialize, Clone)]
 struct Config {
     http_port: String,
     p2p_port: String,
@@ -66,6 +68,7 @@ fn handle_getting(mut stream: TcpStream) {
         }
 
         MessageType::ResponseBlockchain => {
+            println!("response");
             msg.handle_blockchain_response();
         }
     }
@@ -102,19 +105,61 @@ fn main() {
         .send_to_peer(peer.to_owned());
     }
 
+    let http_port = config.http_port.clone(); // will go inside move closure
+    let http_handler = thread::spawn(move || init_http_server(http_port).unwrap());
     let p2p_handler = init_p2p_server(config.p2p_port);
-    p2p_handler.join().unwrap();
+
+    http_handler.join().unwrap();
+    // p2p_handler.join().unwrap();
+}
+
+#[get("/blocks")]
+async fn blocks(req: HttpRequest) -> actix_web::Result<HttpResponse> {
+    // response
+    Ok(HttpResponse::build(StatusCode::OK)
+        .content_type("application/json")
+        .body(serde_json::to_string(&BLOCK_CHAIN.lock().unwrap().blocks).unwrap()))
+}
+
+async fn mine_block(req: HttpRequest, body: String) -> actix_web::Result<HttpResponse> {
+    let next_block = Block::generate_next(body, &BLOCK_CHAIN.lock().unwrap());
+
+    println!("{:?}", next_block);
+
+    BLOCK_CHAIN.lock().unwrap().add(next_block);
+
+    Message {
+        m_type: MessageType::ResponseBlockchain,
+        content: serde_json::to_string(&vec![BLOCK_CHAIN.lock().unwrap().get_latest()]).unwrap(),
+    }
+    .broadcast();
+
+    Ok(HttpResponse::build(StatusCode::OK).body("jknşj"))
+}
+
+#[actix_web::main]
+async fn init_http_server(http_port: String) -> std::io::Result<()> {
+    HttpServer::new(|| {
+        App::new().service(blocks).service(
+            web::resource("/mineBlock")
+                .route(web::post().to(mine_block))
+                .data(String::configure(|cfg| cfg.limit(4096))),
+        )
+    })
+    .bind(format!("127.0.0.1:{}", http_port))?
+    .run()
+    .await
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_hash() {
-        assert_eq!(
-            calculate_hash(&0, "0", &1465154705, "my genesis block!!"),
-            String::from("816534932c2b7154836da6afc367695e6337db8a921823784c14378abed4f7d7")
-        )
-    }
+    // #[test]
+    // fn test_hash() {
+    //     assert_eq!(
+    //         calculate_hash(&0, "0", &1465154705, "my genesis block!!"),
+    //         String::from("816534932c2b7154836da6afc367695e6337db8a921823784c14378abed4f7d7")
+    //     )
+    // }
 }

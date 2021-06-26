@@ -6,10 +6,12 @@ pub struct BlockChain {
 
 impl BlockChain {
     /// add a new block if valid
-    pub fn add(mut self, new: Block) {
+    pub fn add(&mut self, new: Block) {
         if Block::is_valid_next_block(&new, &self.get_latest()) {
+            println!("added");
             self.blocks.push(new)
         }
+        println!("not added");
     }
 
     /// get new_blocks and completely change the self.blocks

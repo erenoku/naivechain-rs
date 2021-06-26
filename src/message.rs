@@ -66,6 +66,9 @@ impl Message {
         let latest_block_received = received_blocks.last().unwrap();
         let latest_block_held = BLOCK_CHAIN.lock().unwrap().get_latest();
 
+        println!("{:?}", latest_block_received);
+        println!("{}", latest_block_held.index);
+
         if latest_block_received.index > latest_block_held.index {
             println!(
                 "blockchain possibly behind. We got: {}, Peer got: {}",
@@ -103,7 +106,7 @@ impl Message {
         }
     }
 
-    fn broadcast(self) {
+    pub fn broadcast(self) {
         for peer in PEERS.lock().unwrap().iter() {
             self.send_to_peer(peer.clone());
         }

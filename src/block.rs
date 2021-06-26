@@ -25,8 +25,8 @@ impl Block {
     }
 
     /// check if the next block is valid for the given previous block
-    pub fn is_valid_next_block(prev: &Block, next: &Block) -> bool {
-        if prev.index + 1 != prev.index {
+    pub fn is_valid_next_block(next: &Block, prev: &Block) -> bool {
+        if prev.index + 1 != next.index {
             return false;
         }
         if prev.hash != next.previous_hash {
