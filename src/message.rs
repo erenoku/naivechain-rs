@@ -26,6 +26,12 @@ impl Message {
             Ok(mut stream) => {
                 // send_response(&mut stream, msg);
                 self.send_response(&mut stream);
+
+                // if this is a response message don't want response
+                if let MessageType::ResponseBlockchain = self.m_type {
+                    return;
+                }
+
                 let rsp = Message::get_response(&mut stream);
 
                 println!("{:?}", rsp);
@@ -108,7 +114,10 @@ impl Message {
 
     pub fn broadcast(self) {
         for peer in PEERS.lock().unwrap().iter() {
-            self.send_to_peer(peer.clone());
+            if !peer.is_empty() {
+                println!("{}", peer);
+                self.send_to_peer(peer.clone());
+            }
         }
     }
 }

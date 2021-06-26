@@ -69,3 +69,16 @@ fn calculate_hash(index: &u32, previous_hash: &str, timestamp: &u64, data: &str)
 
     format!("{:x}", hasher.finalize())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_hash() {
+        assert_eq!(
+            calculate_hash(&0, "0", &1465154705, "my genesis block!!"),
+            String::from("816534932c2b7154836da6afc367695e6337db8a921823784c14378abed4f7d7")
+        )
+    }
+}

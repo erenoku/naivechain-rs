@@ -2,7 +2,7 @@
 extern crate lazy_static;
 
 use actix_web::http::StatusCode;
-use actix_web::{get, web, App, FromRequest, HttpRequest, HttpResponse, HttpServer, Responder};
+use actix_web::{get, web, App, FromRequest, HttpResponse, HttpServer};
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::net::{TcpListener, TcpStream};
@@ -97,6 +97,7 @@ fn main() {
         if peer.is_empty() {
             break;
         }
+
         Message {
             m_type: MessageType::QueryLatest,
             // m_type: MessageType::QueryAll,
@@ -107,21 +108,20 @@ fn main() {
 
     let http_port = config.http_port.clone(); // will go inside move closure
     let http_handler = thread::spawn(move || init_http_server(http_port).unwrap());
-    let p2p_handler = init_p2p_server(config.p2p_port);
+    init_p2p_server(config.p2p_port);
 
     http_handler.join().unwrap();
-    // p2p_handler.join().unwrap();
 }
 
 #[get("/blocks")]
-async fn blocks(req: HttpRequest) -> actix_web::Result<HttpResponse> {
+async fn blocks() -> actix_web::Result<HttpResponse> {
     // response
     Ok(HttpResponse::build(StatusCode::OK)
         .content_type("application/json")
         .body(serde_json::to_string(&BLOCK_CHAIN.lock().unwrap().blocks).unwrap()))
 }
 
-async fn mine_block(req: HttpRequest, body: String) -> actix_web::Result<HttpResponse> {
+async fn mine_block(body: String) -> actix_web::Result<HttpResponse> {
     let next_block = Block::generate_next(body, &BLOCK_CHAIN.lock().unwrap());
 
     println!("{:?}", next_block);
@@ -149,17 +149,4 @@ async fn init_http_server(http_port: String) -> std::io::Result<()> {
     .bind(format!("127.0.0.1:{}", http_port))?
     .run()
     .await
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    // #[test]
-    // fn test_hash() {
-    //     assert_eq!(
-    //         calculate_hash(&0, "0", &1465154705, "my genesis block!!"),
-    //         String::from("816534932c2b7154836da6afc367695e6337db8a921823784c14378abed4f7d7")
-    //     )
-    // }
 }
