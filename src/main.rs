@@ -49,11 +49,13 @@ fn handle_getting(mut stream: TcpStream) {
 
     match msg.m_type {
         MessageType::QueryAll => {
+            println!("all");
+
             let msg = Message {
                 m_type: MessageType::ResponseBlockchain,
                 content: serde_json::to_string(&BLOCK_CHAIN.lock().unwrap().blocks).unwrap(),
             };
-            msg.send_response(&mut stream);
+            msg.send_request(&mut stream);
         }
         MessageType::QueryLatest => {
             println!("latest");
@@ -64,7 +66,7 @@ fn handle_getting(mut stream: TcpStream) {
                     .unwrap(),
             };
             // send_response(&mut stream, msg);
-            msg.send_response(&mut stream);
+            msg.send_request(&mut stream);
         }
 
         MessageType::ResponseBlockchain => {
@@ -130,13 +132,14 @@ async fn connect_to_peer(peer: String) -> actix_web::Result<HttpResponse> {
         return Ok(HttpResponse::build(StatusCode::BAD_REQUEST).body(""));
     }
 
+    PEERS.lock().unwrap().push(peer.clone());
+    println!("{}", PEERS.lock().unwrap().join(""));
+
     Message {
         m_type: MessageType::QueryLatest,
         content: String::new(),
     }
     .send_to_peer(peer.to_owned());
-
-    PEERS.lock().unwrap().push(peer);
 
     Ok(HttpResponse::build(StatusCode::OK).body(""))
 }
@@ -154,7 +157,7 @@ async fn mine_block(body: String) -> actix_web::Result<HttpResponse> {
     }
     .broadcast();
 
-    Ok(HttpResponse::build(StatusCode::OK).body("jknşj"))
+    Ok(HttpResponse::build(StatusCode::OK).body(""))
 }
 
 #[actix_web::main]

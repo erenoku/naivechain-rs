@@ -25,7 +25,7 @@ impl Message {
         match TcpStream::connect(&peer) {
             Ok(mut stream) => {
                 // send_response(&mut stream, msg);
-                self.send_response(&mut stream);
+                self.send_request(&mut stream);
 
                 // if this is a response message don't want response
                 if let MessageType::ResponseBlockchain = self.m_type {
@@ -44,7 +44,7 @@ impl Message {
         }
     }
 
-    pub fn send_response(&self, stream: &mut TcpStream) {
+    pub fn send_request(&self, stream: &mut TcpStream) {
         let json = serde_json::to_string(&self).unwrap();
 
         println!("{:?}", json);
@@ -113,9 +113,10 @@ impl Message {
     }
 
     pub fn broadcast(self) {
+        println!("broadcast");
+        println!("{:?}", PEERS.lock().unwrap());
         for peer in PEERS.lock().unwrap().iter() {
             if !peer.is_empty() {
-                println!("{}", peer);
                 self.send_to_peer(peer.clone());
             }
         }

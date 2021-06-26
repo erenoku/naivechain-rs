@@ -14,9 +14,16 @@ impl BlockChain {
         println!("not added");
     }
 
-    /// get new_blocks and completely change the self.blocks
+    /// get new_blocks and if valid completely change the self.blocks
     pub fn replace(&mut self, new_blocks: Vec<Block>) {
-        self.blocks = new_blocks;
+        let new_chain = BlockChain { blocks: new_blocks };
+
+        if new_chain.is_valid() && new_chain.blocks.len() > self.blocks.len() {
+            self.blocks = new_chain.blocks;
+        } else {
+            println!("not replace");
+            println!("{:?}", new_chain.blocks);
+        }
     }
 
     /// return the latest block
@@ -38,6 +45,7 @@ impl BlockChain {
     /// check if the complete chain is valid
     fn is_valid(&self) -> bool {
         if *self.blocks.first().unwrap() != BlockChain::get_genesis() {
+            println!("genesis problem");
             return false;
         }
 
@@ -45,11 +53,13 @@ impl BlockChain {
 
         for i in 1..self.blocks.len() {
             if Block::is_valid_next_block(
-                temp_blocks.get(i - 1).unwrap(),
                 self.blocks.get(i).unwrap(),
+                temp_blocks.get(i - 1).unwrap(),
             ) {
                 temp_blocks.push(self.blocks.get(i).unwrap());
             } else {
+                println!("vaild problem");
+                println!("{}", i);
                 return false;
             }
         }
