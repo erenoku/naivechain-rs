@@ -36,3 +36,7 @@ You can see the peers of each node with this command: `curl localhost:{HTTP_PORT
 To see the block a node thinks exist run the command: `curl localhost:{HTTP_PORT of desired node}/blocks`
 
 To mine a block: `curl --data '{content of the new block}' localhost:{HTTP_PORT of desired node}/mineBlock`
+
+## TODO
+
+- [ ] Proper logging

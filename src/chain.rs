@@ -8,10 +8,10 @@ impl BlockChain {
     /// add a new block if valid
     pub fn add(&mut self, new: Block) {
         if Block::is_valid_next_block(&new, &self.get_latest()) {
-            println!("added");
+            // println!("added");
             self.blocks.push(new)
         }
-        println!("not added");
+        // println!("not added");
     }
 
     /// get new_blocks and if valid completely change the self.blocks
@@ -21,8 +21,8 @@ impl BlockChain {
         if new_chain.is_valid() && new_chain.blocks.len() > self.blocks.len() {
             self.blocks = new_chain.blocks;
         } else {
-            println!("not replace");
-            println!("{:?}", new_chain.blocks);
+            // println!("not replace");
+            // println!("{:?}", new_chain.blocks);
         }
     }
 
@@ -45,7 +45,7 @@ impl BlockChain {
     /// check if the complete chain is valid
     fn is_valid(&self) -> bool {
         if *self.blocks.first().unwrap() != BlockChain::get_genesis() {
-            println!("genesis problem");
+            // println!("genesis problem");
             return false;
         }
 
@@ -58,8 +58,8 @@ impl BlockChain {
             ) {
                 temp_blocks.push(self.blocks.get(i).unwrap());
             } else {
-                println!("vaild problem");
-                println!("{}", i);
+                // println!("vaild problem");
+                // println!("{}", i);
                 return false;
             }
         }
