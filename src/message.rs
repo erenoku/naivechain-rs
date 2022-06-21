@@ -10,6 +10,8 @@ pub enum MessageType {
     QueryLatest,
     QueryAll,
     ResponseBlockchain,
+    Greet,
+    GreetBack,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -35,6 +37,10 @@ impl Message {
                 let rsp = Message::get_response(&mut stream);
 
                 println!("{:?}", rsp);
+
+                if let MessageType::GreetBack = rsp.m_type {
+                    rsp.get_new_peers();
+                }
 
                 if let MessageType::ResponseBlockchain = rsp.m_type {
                     rsp.handle_blockchain_response();
@@ -109,6 +115,16 @@ impl Message {
             }
         } else {
             println!("received blockchain is not longer than current blockchain. Do nothing")
+        }
+    }
+
+    pub fn get_new_peers(&self) {
+        let new_peers: Vec<String> = serde_json::from_str(&self.content).unwrap();
+
+        println!("got new peers {:?}", new_peers);
+
+        for peer in new_peers {
+            PEERS.lock().unwrap().push(peer);
         }
     }
 

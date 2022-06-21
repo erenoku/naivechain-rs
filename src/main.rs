@@ -49,8 +49,6 @@ fn handle_getting(mut stream: TcpStream) {
 
     match msg.m_type {
         MessageType::QueryAll => {
-            println!("all");
-
             let msg = Message {
                 m_type: MessageType::ResponseBlockchain,
                 content: serde_json::to_string(&BLOCK_CHAIN.lock().unwrap().blocks).unwrap(),
@@ -68,11 +66,21 @@ fn handle_getting(mut stream: TcpStream) {
             // send_response(&mut stream, msg);
             msg.send_request(&mut stream);
         }
-
         MessageType::ResponseBlockchain => {
             println!("response");
             msg.handle_blockchain_response();
         }
+        MessageType::Greet => {
+            msg.get_new_peers();
+
+            let new_msg = Message {
+                m_type: MessageType::GreetBack,
+                content: serde_json::to_string(&PEERS.lock().unwrap().clone()).unwrap(),
+            };
+
+            new_msg.send_request(&mut stream);
+        }
+        _ => {}
     }
 }
 
@@ -89,16 +97,30 @@ fn init_p2p_server(port: String) -> JoinHandle<()> {
     })
 }
 
+fn greet_peer(peer: &str, self_address: String) {
+    let mut content = PEERS.lock().unwrap().clone();
+    content.push(self_address);
+
+    let msg = Message {
+        m_type: MessageType::Greet,
+        content: serde_json::to_string(&content).unwrap(),
+    };
+    msg.send_to_peer(peer.to_string());
+}
+
 fn main() {
     let config = Config::from_env();
     println!("{:?}", config);
 
     for peer in config.initial_peers.split(',') {
-        PEERS.lock().unwrap().push(peer.to_owned());
-
         if peer.is_empty() {
             break;
         }
+
+        // TODO: greet in different thread and not just use localhost as ip
+        greet_peer(peer, format!("localhost:{}", config.p2p_port));
+
+        PEERS.lock().unwrap().push(peer.to_owned());
 
         Message {
             m_type: MessageType::QueryLatest,
@@ -124,6 +146,7 @@ async fn blocks() -> actix_web::Result<HttpResponse> {
 
 #[get("/peers")]
 async fn peers() -> actix_web::Result<HttpResponse> {
+    println!("peers {}", PEERS.lock().unwrap().join("\n"));
     Ok(HttpResponse::build(StatusCode::OK).body(PEERS.lock().unwrap().join("\n")))
 }
 
@@ -162,6 +185,8 @@ async fn mine_block(body: String) -> actix_web::Result<HttpResponse> {
 
 #[actix_web::main]
 async fn init_http_server(http_port: String) -> std::io::Result<()> {
+    println!("start http server on port {}", http_port);
+
     HttpServer::new(|| {
         App::new()
             .service(blocks)
