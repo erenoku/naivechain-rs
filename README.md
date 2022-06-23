@@ -39,4 +39,5 @@ To mine a block: `curl --data '{content of the new block}' localhost:{HTTP_PORT 
 
 ## TODO
 
+- [ ] Eror Handling
 - [ ] Proper logging

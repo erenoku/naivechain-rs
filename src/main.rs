@@ -169,7 +169,7 @@ async fn connect_to_peer(peer: String) -> actix_web::Result<HttpResponse> {
         m_type: MessageType::QueryLatest,
         content: String::new(),
     }
-    .send_to_peer(peer.to_owned());
+    .send_to_peer(peer);
 
     Ok(HttpResponse::build(StatusCode::OK).body(""))
 }
